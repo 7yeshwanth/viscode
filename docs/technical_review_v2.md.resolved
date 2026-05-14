@@ -1,0 +1,231 @@
+# VisCode Technical Review V2 — Multi-Role Audit
+
+> **Date**: 2026-05-14 | **Build**: Phase 1-4 Complete | **Tests**: 161 backend ✅  
+> **Scope**: Full-stack audit — 15 backend files, 6 frontend files
+
+---
+
+## Review Panel
+
+| Role | Focus Area |
+|------|------------|
+| 🏗️ **Engineering Manager** | Architecture, scope, deployment readiness |
+| 🔧 **Backend Architect** | API design, data flow, error handling |
+| 🎨 **Frontend / UI Developer** | Canvas UX, CSS, responsiveness, accessibility |
+| 🚀 **DevOps Engineer** | Deployment, environment, CI/CD, portability |
+| 🔒 **Security Engineer** | Path traversal, injection, data exposure |
+| 🧪 **QA Lead** | Test coverage gaps, edge cases |
+
+---
+
+## Executive Summary
+
+The codebase has a **strong backend foundation** — 161 tests passing, clean Pydantic models, well-structured services. However, **the frontend has several integration issues** that will break on first run, and there are **5 critical fixes** needed before the app is usable on the office laptop.
+
+---
+
+## 🔴 P0 — Critical (Must Fix Before Use)
+
+### 1. SSE Message Escaping — JSON Injection Risk
+**Role**: 🔒 Security + 🔧 Backend  
+**File**: [main.py](file:///Volumes/yeshvault/viscode/backend/main.py#L180)
+
+The SSE data line uses f-string interpolation for JSON, which **breaks if the message contains quotes or special characters** (e.g., file paths with spaces).
+
+```python
+# BROKEN — will produce invalid JSON
+f'{{"phase":"{event["phase"]}","message":"{event["message"]}","percent":{event["percent"]}}}'
+```
+
+**Fix**: Use `json.dumps()` for proper escaping.
+
+---
+
+### 2. `.env` Pattern Blocks Valid Paths — Substring False Positive
+**Role**: 🔒 Security  
+**File**: [config.py](file:///Volumes/yeshvault/viscode/backend/config.py#L43)
+
+`.env` is in `BLOCKED_PATTERNS`. The scanner's `_is_path_safe()` does `if pattern in resolved` — a **substring match on the entire path**. A project at `/Users/me/my-env-project` partially matches `env`. A path like `/Users/me/.env-demo/src` is fully blocked.
+
+**Fix**: BLOCKED_PATTERNS should check **filename only**, not full resolved path.
+
+---
+
+### 3. Frontend CSS Import Path Wrong for Vite Production Build
+**Role**: 🎨 Frontend  
+**File**: [index.html](file:///Volumes/yeshvault/viscode/frontend/index.html#L11)
+
+```html
+<link rel="stylesheet" href="/src/styles/index.css" />
+```
+
+Vite in dev mode serves `/src/` files, but **production build won't bundle** CSS linked directly from HTML pointing at `/src/`. CSS must be imported via JS.
+
+**Fix**: Remove `<link>` tag, add `import './styles/index.css'` in `main.js`.
+
+---
+
+### 4. Stale Vite Scaffold Files Cause Style Conflicts
+**Role**: 🎨 Frontend  
+**Files**: `frontend/src/counter.js`, `frontend/src/style.css`
+
+The default `create-vite` template left `counter.js` and `style.css` (5KB of conflicting styles). The default `style.css` resets body, sets colors, etc., interfering with our design system.
+
+**Fix**: Delete both files.
+
+---
+
+### 5. No Vite Config — No API Proxy for Dev
+**Role**: 🚀 DevOps + 🎨 Frontend  
+**File**: `frontend/vite.config.js` (missing)
+
+Without `vite.config.js`, the frontend makes direct requests to `localhost:8000`. This causes CORS issues and the API base URL must be hardcoded.
+
+**Fix**: Create `vite.config.js` with dev proxy.
+
+---
+
+## 🟠 P1 — High (Should Fix Before Demo)
+
+### 6. No Back-Navigation from File Detail View
+**Role**: 🎨 Frontend  
+**File**: [main.js](file:///Volumes/yeshvault/viscode/frontend/src/main.js)
+
+Double-clicking a file drills into detail view, but there's **no way to return** to the overview. The overview graph data is lost.
+
+**Fix**: Store `currentOverviewGraph`, add a "← Back" button in the topbar.
+
+---
+
+### 7. API Base URL Hardcoded to localhost:8000
+**Role**: 🚀 DevOps  
+**File**: [api.js](file:///Volumes/yeshvault/viscode/frontend/src/api.js#L7)
+
+```javascript
+const API_BASE = 'http://localhost:8000';
+```
+
+With Vite proxy (Fix #5), change to `''` (empty string). Otherwise office laptop at different port breaks.
+
+---
+
+### 8. Port Conflict Not Handled Gracefully
+**Role**: 🔧 Backend  
+**File**: [main.py](file:///Volumes/yeshvault/viscode/backend/main.py#L282)
+
+User hit `Address already in use`. No auto-retry or clear resolution message.
+
+**Fix**: Auto-find available port or print `lsof -ti:8000 | xargs kill` instruction.
+
+---
+
+### 9. Missing `__init__.py` Files  
+**Role**: 🔧 Backend  
+**Files**: `services/`, `models/`, `cache/`
+
+Missing init files. Works now via `sys.path` but will break in different CWD or packaging.
+
+---
+
+### 10. `ProjectAnalysis.model_dump()` — Memory Bomb
+**Role**: 🔧 Backend  
+**File**: [main.py](file:///Volumes/yeshvault/viscode/backend/main.py#L163)
+
+`project.model_dump()` serializes everything including `absolute_path` for every file. For 100-file projects = **50MB+ in-memory JSON**.
+
+**Fix**: Exclude heavy fields or store selectively.
+
+---
+
+### 11. Canvas Layout is Flat Grid — Not Hierarchical
+**Role**: 🎨 Frontend  
+**File**: [canvas.js](file:///Volumes/yeshvault/viscode/frontend/src/canvas.js#L120)
+
+Grid layout doesn't show folder hierarchy. The installed `dagre-d3` package is unused.
+
+**Fix**: Implement dagre tree layout for overview, radial layout for file detail.
+
+---
+
+### 12. No Loading/Error UI States
+**Role**: 🎨 Frontend
+
+Backend down = silent failure. No toasts, no retry, no user guidance.
+
+---
+
+### 13. `.gitignore` Incomplete
+**Role**: 🚀 DevOps
+
+Missing: `.env`, `.viscode_cache/`, `__pycache__/`, `node_modules/`, `dist/`
+
+---
+
+## 🟡 P2 — Medium
+
+| # | Issue | File |
+|---|-------|------|
+| 14 | No favicon | `frontend/index.html` |
+| 15 | `innerHTML` XSS risk in panel | `panel.js` |
+| 16 | CSS conflicts if stale `style.css` loads | `style.css` |
+| 17 | No keyboard nav on canvas nodes (a11y) | `canvas.js` |
+| 18 | Search overlay inside canvas (z-index issues) | `index.html` |
+| 19 | No `.env.local` support in frontend | — |
+| 20 | Cache has no TTL — entries never expire | `analysis_cache.py` |
+| 21 | `default=str` masks serialization bugs | `analysis_cache.py` |
+| 22 | `model_tier` parameter ignored in orchestrator | `orchestrator.py` |
+| 23 | No tooltip on node hover | `canvas.js` |
+
+---
+
+## 🟢 P3 — Low
+
+| # | Issue |
+|---|-------|
+| 24 | Emoji in backend logs may break Windows terminal |
+| 25 | No rate limiting on API |
+| 26 | Frontend doesn't persist last project path |
+| 27 | No dark/light toggle |
+| 28 | Panel doesn't scroll-to-top on node switch |
+
+---
+
+## Deployment Fix Priority
+
+```
+Phase A (30 min) — Get it running:
+  ✅ Fix #1  SSE escaping          → main.py
+  ✅ Fix #3  CSS import path       → index.html + main.js
+  ✅ Fix #4  Delete stale files    → src/counter.js, src/style.css
+  ✅ Fix #5  Vite config           → vite.config.js (new)
+  ✅ Fix #7  API base URL          → api.js
+  ✅ Fix #9  __init__.py files     → backend dirs
+
+Phase B (30 min) — Make it usable:
+  ✅ Fix #2  .env path blocking    → config.py + scanner.py
+  ✅ Fix #6  Back navigation       → main.js
+  ✅ Fix #8  Port conflict         → main.py
+  ✅ Fix #13 .gitignore            → both .gitignore files
+
+Phase C (1 hr) — Polish UI:
+  ✅ Fix #11 Dagre layout          → canvas.js
+  ✅ Fix #12 Error states          → main.js
+  ✅ Fix #22 Model tier passthrough → orchestrator.py
+  ✅ Fix #23 Canvas tooltips       → canvas.js
+```
+
+---
+
+## Test Coverage Gaps
+
+| Area | Current | Missing |
+|------|---------|---------|
+| Scanner | 14 ✅ | Windows paths, symlink loops |
+| Extractor | 26 ✅ | Go/Rust/Java tests |
+| Chunker | 12 ✅ | Single 2000-line function |
+| Analyzer Parse | 14 ✅ | Malformed JSON recovery |
+| Validator | 10 ✅ | Empty ground truth |
+| Cache | 13 ✅ | Concurrent writes, TTL |
+| Graph Builder | 10 ✅ | 100+ node perf |
+| FastAPI | 6 ✅ | SSE streaming integration |
+| **Frontend** | **0 ❌** | Everything |

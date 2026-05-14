@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="VisCode — AI-powered code visualization. Understand any codebase through interactive visual exploration." />
+    <title>VisCode — Code Visualizer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+</head>
+<body>
+    <div id="app">
+        <!-- Top Bar -->
+        <header id="topbar" class="topbar">
+            <div class="topbar-left">
+                <h1 class="logo">
+                    <span class="logo-icon">◈</span>
+                    <span class="logo-text">VisCode</span>
+                </h1>
+            </div>
+            <div class="topbar-center">
+                <div id="path-input-container" class="path-input-container">
+                    <span class="path-icon">📁</span>
+                    <input
+                        type="text"
+                        id="path-input"
+                        class="path-input"
+                        placeholder="Enter project path (e.g., /Users/you/my-project)"
+                        spellcheck="false"
+                        autocomplete="off"
+                    />
+                    <button id="analyze-btn" class="btn btn-primary">
+                        <span class="btn-icon">▶</span>
+                        Analyze
+                    </button>
+                    <button id="estimate-btn" class="btn btn-ghost" title="Estimate cost before analyzing">
+                        💰 Estimate
+                    </button>
+                </div>
+            </div>
+            <div class="topbar-right">
+                <button id="search-btn" class="btn btn-icon" title="Search (Ctrl+F)">🔍</button>
+                <button id="zoom-fit-btn" class="btn btn-icon" title="Fit to screen">⊞</button>
+                <span id="api-status" class="status-dot" title="API Status"></span>
+            </div>
+        </header>
+
+        <!-- Search Overlay -->
+        <div id="search-overlay" class="search-overlay hidden">
+            <input type="text" id="search-input" class="search-input" placeholder="Search functions, classes, files..." />
+            <div id="search-results" class="search-results"></div>
+        </div>
+
+        <!-- Main Layout -->
+        <main class="main-layout">
+            <!-- Canvas -->
+            <div id="canvas-container" class="canvas-container">
+                <svg id="canvas" class="canvas"></svg>
+
+                <!-- Progress Overlay -->
+                <div id="progress-overlay" class="progress-overlay hidden">
+                    <div class="progress-card">
+                        <div class="progress-header">
+                            <span class="progress-title">Analyzing Project...</span>
+                            <span id="progress-percent" class="progress-percent">0%</span>
+                        </div>
+                        <div class="progress-bar-container">
+                            <div id="progress-bar" class="progress-bar"></div>
+                        </div>
+                        <div id="progress-phase" class="progress-phase">Initializing...</div>
+                        <div id="progress-log" class="progress-log"></div>
+                    </div>
+                </div>
+
+                <!-- Welcome Screen -->
+                <div id="welcome-screen" class="welcome-screen">
+                    <div class="welcome-card">
+                        <div class="welcome-icon">◈</div>
+                        <h2>Welcome to VisCode</h2>
+                        <p>AI-powered code visualization for understanding any codebase.</p>
+                        <div class="welcome-steps">
+                            <div class="step"><span class="step-num">1</span> Enter a project path above</div>
+                            <div class="step"><span class="step-num">2</span> Click <strong>Estimate</strong> to preview cost</div>
+                            <div class="step"><span class="step-num">3</span> Click <strong>Analyze</strong> to start</div>
+                        </div>
+                        <div class="welcome-hint">
+                            💡 Your code is analyzed by AI (OpenAI GPT-4.1). No code is stored remotely.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Estimate Modal -->
+                <div id="estimate-modal" class="modal hidden">
+                    <div class="modal-card">
+                        <div class="modal-header">
+                            <h3>📊 Cost Estimate</h3>
+                            <button class="modal-close" onclick="document.getElementById('estimate-modal').classList.add('hidden')">✕</button>
+                        </div>
+                        <div id="estimate-body" class="modal-body"></div>
+                        <div class="modal-footer">
+                            <button class="btn btn-ghost" onclick="document.getElementById('estimate-modal').classList.add('hidden')">Cancel</button>
+                            <button id="estimate-proceed-btn" class="btn btn-primary">Proceed with Analysis</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Privacy Consent Modal -->
+                <div id="privacy-modal" class="modal hidden">
+                    <div class="modal-card">
+                        <div class="modal-header">
+                            <h3>🔒 Data Privacy Notice</h3>
+                        </div>
+                        <div class="modal-body">
+                            <p>Your code will be sent to <strong>OpenAI</strong> for AI-powered analysis.</p>
+                            <ul>
+                                <li>Code is sent via encrypted HTTPS connection</li>
+                                <li>No code is stored by VisCode on any remote server</li>
+                                <li>OpenAI's data usage policy applies</li>
+                            </ul>
+                            <label class="consent-label">
+                                <input type="checkbox" id="consent-checkbox" />
+                                I understand and consent to sending my code to OpenAI for analysis
+                            </label>
+                        </div>
+                        <div class="modal-footer">
+                            <button class="btn btn-ghost" onclick="document.getElementById('privacy-modal').classList.add('hidden')">Cancel</button>
+                            <button id="consent-proceed-btn" class="btn btn-primary" disabled>Continue</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Detail Panel -->
+            <aside id="detail-panel" class="detail-panel hidden">
+                <div class="panel-header">
+                    <h3 id="panel-title" class="panel-title">Details</h3>
+                    <button id="panel-close" class="btn btn-icon panel-close">✕</button>
+                </div>
+                <div id="panel-content" class="panel-content"></div>
+            </aside>
+        </main>
+
+        <!-- Status Bar -->
+        <footer class="statusbar">
+            <span id="status-message" class="status-message">Ready</span>
+            <span id="node-count" class="status-item"></span>
+            <span id="edge-count" class="status-item"></span>
+            <span id="cache-info" class="status-item"></span>
+        </footer>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+</body>
+</html>

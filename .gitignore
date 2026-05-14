@@ -1,0 +1,39 @@
+# VisCode — AI-Powered Code Visualizer
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Environment secrets
+.env
+backend/.env
+
+# Cache
+.viscode_cache/
+backend/.viscode_cache/
+
+# Node
+node_modules/
+frontend/node_modules/
+
+# Build
+dist/
+frontend/dist/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+htmlcov/
+.coverage
+.pytest_cache/
