@@ -1,8 +1,8 @@
 """
 VisCode AI Analyzer
 
-The heart of the system. Uses OpenAI GPT-4.1 to analyze code files
-with a 3-pass pipeline:
+The heart of the system. Uses AI models (OpenAI, Claude, Gemini, etc.)
+to analyze code files with a 3-pass pipeline:
   Pass 1: Per-file deep analysis (enriches ground truth with descriptions)
   Pass 2: Cross-file relationship analysis
   Pass 3: Architecture summary
@@ -10,7 +10,10 @@ with a 3-pass pipeline:
 Uses hybrid approach: regex provides facts, AI provides understanding.
 """
 
+from __future__ import annotations
+
 import json
+import re
 import time
 import asyncio
 import logging
@@ -77,7 +80,7 @@ PASS1_SCHEMA = {
 
 
 class AIAnalyzer:
-    """AI-powered code analysis engine using OpenAI GPT-4.1."""
+    """AI-powered code analysis engine. Works with any OpenAI-compatible API."""
 
     def __init__(self):
         api_key = config.OPENAI_API_KEY
@@ -198,7 +201,6 @@ class AIAnalyzer:
             pass
 
         # 2) Extract from ```json ... ``` code blocks
-        import re
         json_block = re.search(r'```(?:json)?\s*\n(.*?)\n```', text, re.DOTALL)
         if json_block:
             try:

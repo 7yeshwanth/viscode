@@ -6,6 +6,8 @@ Handles: language detection, binary detection, minified code detection,
 encoding issues, symlinks, permissions, and file filtering.
 """
 
+from __future__ import annotations
+
 import os
 import hashlib
 import fnmatch
@@ -308,11 +310,15 @@ def estimate_cost(manifest: FileManifest, model_tier: str = "balanced") -> dict:
     # Average tokens per line of code (rough estimate)
     TOKENS_PER_LINE = 10
 
-    # Pricing per million tokens (approximate, GPT-4.1 as of 2026)
+    # Pricing per million tokens (approximate, 2026)
     PRICING = {
         "gpt-4.1-mini": {"input": 0.40, "output": 1.60},
         "gpt-4.1": {"input": 2.00, "output": 8.00},
+        "gpt-4o": {"input": 2.50, "output": 10.00},
+        "gpt-4o-mini": {"input": 0.15, "output": 0.60},
     }
+    # Default pricing for unknown models (Claude, Gemini, etc.)
+    DEFAULT_PRICING = {"input": 3.00, "output": 15.00}
 
     total_code_tokens = manifest.total_lines * TOKENS_PER_LINE
     prompt_overhead_per_file = 1500  # Template tokens per file
@@ -321,27 +327,20 @@ def estimate_cost(manifest: FileManifest, model_tier: str = "balanced") -> dict:
     analyzable_files = [f for f in manifest.files if not f.is_generated and not f.is_minified]
     n_files = len(analyzable_files)
 
-    # Select models based on tier
-    if model_tier == "fast":
-        pass1_model = "gpt-4.1-mini"
-        pass2_model = "gpt-4.1-mini"
-    elif model_tier == "deep":
-        pass1_model = "gpt-4.1"
-        pass2_model = "gpt-4.1"
-    else:  # balanced
-        pass1_model = "gpt-4.1-mini"
-        pass2_model = "gpt-4.1"
+    # Use configured models
+    pass1_model = config.OPENAI_MODEL_PASS1
+    pass2_model = config.OPENAI_MODEL_PASS2
 
     # Pass 1: Per-file analysis
     pass1_input = sum(f.line_count * TOKENS_PER_LINE + prompt_overhead_per_file for f in analyzable_files)
     pass1_output = n_files * output_per_file
-    p1_pricing = PRICING[pass1_model]
+    p1_pricing = PRICING.get(pass1_model, DEFAULT_PRICING)
     pass1_cost = (pass1_input * p1_pricing["input"] + pass1_output * p1_pricing["output"]) / 1_000_000
 
     # Pass 2: Cross-file (one call with all summaries)
     pass2_input = n_files * 200 + 2000  # ~200 tokens per file summary + prompt
     pass2_output = 5000
-    p2_pricing = PRICING[pass2_model]
+    p2_pricing = PRICING.get(pass2_model, DEFAULT_PRICING)
     pass2_cost = (pass2_input * p2_pricing["input"] + pass2_output * p2_pricing["output"]) / 1_000_000
 
     # Pass 3: Architecture (one call)

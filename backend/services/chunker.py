@@ -6,6 +6,8 @@ function/class boundaries. Never splits inside a function body.
 Each chunk includes the imports section for context.
 """
 
+from __future__ import annotations
+
 import logging
 from dataclasses import dataclass, field
 from models.analysis import GroundTruth, IdentifierKind

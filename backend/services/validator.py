@@ -5,6 +5,8 @@ Validates AI analysis output against ground truth (regex-extracted identifiers).
 Removes hallucinated elements, fixes line numbers, logs corrections.
 """
 
+from __future__ import annotations
+
 import logging
 from models.analysis import FileAnalysis, GroundTruth, IdentifierKind
 

@@ -6,6 +6,8 @@ Cache key = SHA256(file_content) + model_version.
 Prevents re-analyzing unchanged files.
 """
 
+from __future__ import annotations
+
 import json
 import hashlib
 import logging

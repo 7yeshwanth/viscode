@@ -10,6 +10,7 @@ import uuid
 import json
 import asyncio
 import logging
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
@@ -37,7 +38,25 @@ logger = logging.getLogger("viscode.server")
 # ──────────────────────────────────────────────
 orchestrator = AnalysisOrchestrator()
 # Store results in memory (keyed by project_id)
+# Each entry includes a timestamp for TTL eviction
 project_results: dict[str, dict] = {}
+# Limit concurrent analyses to prevent overload
+_active_analyses = 0
+_MAX_CONCURRENT_ANALYSES = 3
+_PROJECT_TTL_SECONDS = 3600  # 1 hour
+
+
+def _evict_stale_results():
+    """Remove project results older than TTL to prevent memory leaks."""
+    now = time.time()
+    stale_ids = [
+        pid for pid, data in project_results.items()
+        if now - data.get("created_at", now) > _PROJECT_TTL_SECONDS
+    ]
+    for pid in stale_ids:
+        del project_results[pid]
+    if stale_ids:
+        logger.info(f"Evicted {len(stale_ids)} stale project results")
 
 
 # ──────────────────────────────────────────────
@@ -113,11 +132,19 @@ async def start_analysis(request: AnalyzeRequest):
     Start project analysis. Returns project_id immediately.
     Use the SSE endpoint to stream progress.
     """
+    # Evict stale results (older than 1 hour)
+    _evict_stale_results()
+
     # Quick validation
     from services.scanner import validate_project_path
     valid, error = validate_project_path(request.path)
     if not valid:
         raise HTTPException(status_code=400, detail=error)
+
+    # Check concurrent limit
+    global _active_analyses
+    if _active_analyses >= _MAX_CONCURRENT_ANALYSES:
+        raise HTTPException(status_code=429, detail=f"Too many concurrent analyses ({_active_analyses} running). Please wait.")
 
     project_id = uuid.uuid4().hex[:12]
 
@@ -127,6 +154,7 @@ async def start_analysis(request: AnalyzeRequest):
         "path": request.path,
         "model_tier": request.model_tier,
         "ignore_patterns": request.ignore_patterns,
+        "created_at": time.time(),
     }
 
     return {"project_id": project_id, "status": "queued", "message": "Analysis queued. Stream progress via /api/analyze/{project_id}/stream"}
@@ -142,6 +170,8 @@ async def stream_analysis(project_id: str):
         raise HTTPException(status_code=404, detail="Project not found")
 
     async def event_generator():
+        global _active_analyses
+        _active_analyses += 1
         progress_queue: asyncio.Queue = asyncio.Queue()
 
         def on_progress(phase: str, message: str, percent: float):
@@ -163,6 +193,7 @@ async def stream_analysis(project_id: str):
                 # Store results but exclude heavy fields to save memory
                 project_results[project_id] = {
                     "status": "complete",
+                    "created_at": time.time(),
                     "project": project.model_dump(exclude={
                         "manifest": {"files": {"__all__": {"absolute_path"}}}
                     }),
@@ -171,7 +202,7 @@ async def stream_analysis(project_id: str):
                 progress_queue.put_nowait({"phase": "done", "message": "Analysis complete", "percent": 100})
             except Exception as e:
                 logger.error(f"Analysis failed: {e}")
-                project_results[project_id] = {"status": "error", "error": str(e)}
+                project_results[project_id] = {"status": "error", "error": str(e), "created_at": time.time()}
                 progress_queue.put_nowait({"phase": "error", "message": str(e), "percent": 0})
 
         task = asyncio.create_task(run_analysis())
@@ -189,6 +220,7 @@ async def stream_analysis(project_id: str):
             except asyncio.TimeoutError:
                 yield {"event": "heartbeat", "data": '{"status":"alive"}'}
 
+        _active_analyses = max(0, _active_analyses - 1)
         await task
 
     return EventSourceResponse(event_generator())

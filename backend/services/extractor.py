@@ -6,6 +6,8 @@ This provides the GROUND TRUTH that AI output is validated against.
 No AI calls — pure pattern matching per language.
 """
 
+from __future__ import annotations
+
 import re
 import logging
 from models.analysis import (
@@ -276,13 +278,19 @@ def extract_ground_truth(file_path: str, content: str, language: str) -> GroundT
                 is_method = current_class is not None and language == "python"
                 if pattern_name == "method" and language in ("java", "csharp"):
                     is_method = True
+                # Go receiver methods: func (r *ReceiverType) MethodName()
+                go_receiver = None
+                if pattern_name == "method" and language == "go" and len(m.groups()) >= 2:
+                    go_receiver = m.group(1)  # Receiver type name
+                    name = m.group(2)         # Method name
+                    is_method = True
 
                 identifiers.append(ExtractedIdentifier(
                     name=name,
                     kind=IdentifierKind.METHOD if is_method else IdentifierKind.FUNCTION,
                     line_start=line_num + 1,
                     line_end=end_line,
-                    parent=current_class if is_method else None,
+                    parent=go_receiver or (current_class if is_method else None),
                     params=params,
                 ))
 
@@ -332,7 +340,7 @@ def extract_ground_truth(file_path: str, content: str, language: str) -> GroundT
 
         # --- Imports ---
         for pattern_name in ("import_from", "import_direct", "import_require",
-                             "import", "using", "use", "use_stmt",
+                             "import", "import_single", "using", "use", "use_stmt",
                              "require", "require_relative"):
             pattern = lang_patterns.get(pattern_name)
             if not pattern:

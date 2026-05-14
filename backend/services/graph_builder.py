@@ -5,6 +5,8 @@ Transforms analysis results into visualization graph data (nodes + edges)
 ready for the D3.js frontend canvas.
 """
 
+from __future__ import annotations
+
 import logging
 from models.analysis import (
     FileManifest, FileAnalysis, CrossFileAnalysis, ArchitectureSummary,
