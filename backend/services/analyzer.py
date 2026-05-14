@@ -103,7 +103,7 @@ class AIAnalyzer:
         system_prompt: str,
         user_prompt: str,
         max_retries: int = 3,
-        timeout: int = 60,
+        timeout: int = 120,
     ) -> dict:
         """
         Make an AI API call with retry and rate limiting.
@@ -115,16 +115,24 @@ class AIAnalyzer:
             for attempt in range(max_retries):
                 try:
                     start_time = time.time()
+
+                    # Build request kwargs
+                    kwargs = {
+                        "model": model,
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt},
+                        ],
+                        "temperature": 0.1,
+                    }
+
+                    # Only use json_object mode for native OpenAI
+                    # Custom proxies (Claude, Azure) may not support it
+                    if not config.OPENAI_BASE_URL:
+                        kwargs["response_format"] = {"type": "json_object"}
+
                     response = await asyncio.wait_for(
-                        self.client.chat.completions.create(
-                            model=model,
-                            messages=[
-                                {"role": "system", "content": system_prompt},
-                                {"role": "user", "content": user_prompt},
-                            ],
-                            response_format={"type": "json_object"},
-                            temperature=0.1,
-                        ),
+                        self.client.chat.completions.create(**kwargs),
                         timeout=timeout,
                     )
                     duration = time.time() - start_time
@@ -135,8 +143,20 @@ class AIAnalyzer:
                         self._total_tokens_in += response.usage.prompt_tokens
                         self._total_tokens_out += response.usage.completion_tokens
 
-                    content = response.choices[0].message.content
-                    result = json.loads(content)
+                    content = response.choices[0].message.content or ""
+
+                    # Debug: log first 200 chars of response
+                    logger.debug(f"AI raw response (first 200 chars): {content[:200]}")
+
+                    if not content.strip():
+                        logger.warning(f"AI returned empty content (attempt {attempt + 1})")
+                        if attempt == max_retries - 1:
+                            raise ValueError("AI returned empty response")
+                        await asyncio.sleep(2 ** attempt)
+                        continue
+
+                    # Try to extract JSON — handle markdown code blocks
+                    result = self._extract_json(content)
 
                     logger.info(
                         f"AI call #{self._call_count}: model={model}, "
@@ -163,6 +183,50 @@ class AIAnalyzer:
 
         raise RuntimeError("AI call failed after all retries")
 
+    @staticmethod
+    def _extract_json(content: str) -> dict:
+        """
+        Extract JSON from AI response.
+        Handles: raw JSON, markdown ```json blocks, and text with embedded JSON.
+        """
+        text = content.strip()
+
+        # 1) Direct JSON parse
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            pass
+
+        # 2) Extract from ```json ... ``` code blocks
+        import re
+        json_block = re.search(r'```(?:json)?\s*\n(.*?)\n```', text, re.DOTALL)
+        if json_block:
+            try:
+                return json.loads(json_block.group(1).strip())
+            except json.JSONDecodeError:
+                pass
+
+        # 3) Find first { ... } block
+        brace_start = text.find('{')
+        if brace_start >= 0:
+            # Find matching closing brace
+            depth = 0
+            for i in range(brace_start, len(text)):
+                if text[i] == '{':
+                    depth += 1
+                elif text[i] == '}':
+                    depth -= 1
+                    if depth == 0:
+                        try:
+                            return json.loads(text[brace_start:i + 1])
+                        except json.JSONDecodeError:
+                            break
+
+        raise json.JSONDecodeError(
+            f"Could not extract JSON from response (length={len(text)})",
+            text[:200], 0
+        )
+
     # ──────────────────────────────────────────
     # Pass 1: Per-File Analysis
     # ──────────────────────────────────────────
@@ -186,10 +250,11 @@ class AIAnalyzer:
         Returns:
             Raw AI analysis result as dict.
         """
+        # fast = cheap model, deep = best model, balanced = per-pass default
         if model_tier == "fast":
-            model = "gpt-4.1-mini"
+            model = config.OPENAI_MODEL_PASS1
         elif model_tier == "deep":
-            model = "gpt-4.1"
+            model = config.OPENAI_MODEL_PASS2
         else:
             model = config.OPENAI_MODEL_PASS1
 
@@ -388,9 +453,9 @@ Respond with this JSON structure:
             model_tier: "fast", "balanced", or "deep".
         """
         if model_tier == "fast":
-            model = "gpt-4.1-mini"
+            model = config.OPENAI_MODEL_PASS1
         elif model_tier == "deep":
-            model = "gpt-4.1"
+            model = config.OPENAI_MODEL_PASS2
         else:
             model = config.OPENAI_MODEL_PASS2
 
@@ -472,9 +537,9 @@ Respond with this JSON:
     ) -> ArchitectureSummary:
         """Generate architecture overview (Pass 3)."""
         if model_tier == "fast":
-            model = "gpt-4.1-mini"
+            model = config.OPENAI_MODEL_PASS1
         elif model_tier == "deep":
-            model = "gpt-4.1"
+            model = config.OPENAI_MODEL_PASS3
         else:
             model = config.OPENAI_MODEL_PASS3
 

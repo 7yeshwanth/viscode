@@ -4,6 +4,8 @@ VisCode FastAPI Server
 REST API + SSE streaming for the code visualization tool.
 """
 
+from __future__ import annotations
+
 import uuid
 import json
 import asyncio
