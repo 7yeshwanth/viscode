@@ -20,6 +20,7 @@ class Config:
 
     # OpenAI
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
+    OPENAI_BASE_URL: str = os.getenv("OPENAI_BASE_URL", "")  # Custom endpoint (Azure, proxy, etc.)
     OPENAI_MODEL_PASS1: str = os.getenv("OPENAI_MODEL_PASS1", "gpt-4.1-mini")
     OPENAI_MODEL_PASS2: str = os.getenv("OPENAI_MODEL_PASS2", "gpt-4.1")
     OPENAI_MODEL_PASS3: str = os.getenv("OPENAI_MODEL_PASS3", "gpt-4.1")

@@ -81,10 +81,14 @@ class AIAnalyzer:
 
     def __init__(self):
         api_key = config.OPENAI_API_KEY
+        base_url = config.OPENAI_BASE_URL
         # Allow initialization without key (for testing parsing logic)
         # API calls will fail, but parse methods will work
         if api_key and api_key != "sk-your-key-here":
-            self.client = AsyncOpenAI(api_key=api_key)
+            client_kwargs = {"api_key": api_key}
+            if base_url:
+                client_kwargs["base_url"] = base_url
+            self.client = AsyncOpenAI(**client_kwargs)
         else:
             self.client = None
             logger.warning("No OpenAI API key set. AI calls will fail, but parsing works.")
